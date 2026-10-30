@@ -1,0 +1,4 @@
+machine_id,assembly_line_no,registros,falhas,taxa_falha,torque_media,hydraulic_pressure_media,cutting_media
+Makino-L1-Unit1-2013,Shopfloor-L1,874,454,0.519,24.97,100.2,2.774
+Makino-L3-Unit1-2015,Shopfloor-L3,818,415,0.507,25.557,100.842,2.781
+Makino-L2-Unit1-2015,Shopfloor-L2,808,396,0.49,25.239,103.375,2.794

@@ -1,0 +1,4 @@
+type,registros,falhas,taxa_falha,desgaste_medio_min,torque_medio_nm
+L,6000,235,0.039,108.379,39.997
+M,2997,83,0.028,107.272,40.017
+H,1003,21,0.021,107.42,39.838
