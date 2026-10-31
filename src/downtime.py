@@ -1,7 +1,3 @@
-# PARA RODAR NO TERMINAL
-# cd Downtime
-# python pipeline_downtime.py "Machine Downtime.csv" output
-
 import re
 import sys
 import unicodedata
@@ -25,6 +21,8 @@ POSITIVE_ONLY = [
     "spindle_vibration",
     "tool_vibration",
 ]
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 # Função que padroniza o nome de uma coluna para o formato "snake_case" (letras minúsculas e separadas por underline)
@@ -162,12 +160,16 @@ def chart(df, path):
 
 # Função principal que controla toda a sequência de execução do script
 def main():
-    # Pega o caminho do arquivo de dados informado pelo usuário no terminal (ou usa "data/machine_downtime.csv" por padrão)
-    csv = Path(
-        sys.argv[1] if len(sys.argv) > 1 else "data/machine_downtime.csv"
+    csv = (
+        Path(sys.argv[1])
+        if len(sys.argv) > 1
+        else ROOT / "data/raw/downtime/machine_downtime.csv"
     )
-    # Pega a pasta onde os resultados serão salvos (ou usa a pasta "output" por padrão)
-    out = Path(sys.argv[2] if len(sys.argv) > 2 else "output")
+    out = (
+        Path(sys.argv[2])
+        if len(sys.argv) > 2
+        else ROOT / "data/processed/downtime"
+    )
     # Cria a pasta de saída no computador caso ela ainda não exista
     out.mkdir(parents=True, exist_ok=True)
     # Lê o arquivo CSV informado e envia o conteúdo direto para a função de limpeza
