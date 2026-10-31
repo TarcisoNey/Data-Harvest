@@ -2,28 +2,15 @@
 # cd Downtime
 # python pipeline_downtime.py "Machine Downtime.csv" output
 
-# Ferramenta para procurar e alterar padrões de texto no código
 import re
-
-# Ferramenta para acessar recursos e comandos do próprio sistema operacional
 import sys
-
-# Ferramenta para remover acentos e caracteres especiais dos textos
 import unicodedata
-
-# Ferramenta para criar e manipular caminhos de arquivos e pastas no computador
 from pathlib import Path
-
-# Biblioteca usada para criar gráficos e visualizações de dados
 import matplotlib
 
 # Configura o gerador de gráficos para salvar imagens direto em arquivo, sem abrir janelas na tela
 matplotlib.use("Agg")
-
-# Importa o módulo de desenho do matplotlib com um apelido mais curto: "plt"
 import matplotlib.pyplot as plt
-
-# Biblioteca para ler, organizar e analisar grandes tabelas de dados, apelidada de "pd"
 import pandas as pd
 
 # Lista com os nomes das colunas de sensores que só podem ter valores positivos (maiores que zero)
