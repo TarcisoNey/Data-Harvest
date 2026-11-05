@@ -39,3 +39,6 @@ Desktop.ini
 .cache/
 .turbo/
 .eslintcache
+
+# Bancos SQLite gerados localmente
+*.db
