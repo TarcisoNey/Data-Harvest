@@ -1,10 +1,10 @@
-"""ETL da Sprint 2: carrega os CSVs limpos no SQLite oficial.
+"""Pipeline ETL da Sprint 2 - Data Harvest.
 
-Executar na raiz do Data-Harvest:
-    python ai4i2020/lerCSVCpy
+Realiza a leitura e validação dos CSVs limpos AI4I e
+Downtime, carregando os dados no banco SQLite oficial.
 
-Este arquivo é o único código que precisa ser alterado.
-Os CSVs e o schema SQL existentes são apenas lidos, não modificados.
+O banco gerado é data/sprint2_etl.db.
+Os arquivos de origem e o schema não são modificados.
 """
 import argparse
 import sqlite3
