@@ -1,90 +1,69 @@
-# Data Harvest
+## Execução do Pipeline ETL com Docker
 
-Projeto de análise de dados desenvolvido pelo Instituto Caldeira em parceria
-com a John Deere. O repositório reúne pipelines para os conjuntos Downtime e
-AI4I 2020, seus dados e resultados, além de consultas SQL para o conjunto
-Downtime.
+O pipeline ETL da Sprint 2 pode ser executado utilizando Docker, permitindo realizar a carga dos dados em um ambiente isolado, com as dependências Python instaladas automaticamente.
 
-## Estrutura
+### Pré-requisitos
+
+- Docker Desktop instalado e em execução.
+- Arquivos CSV necessários disponíveis na pasta `data`.
+
+### Construção da imagem
+
+Na pasta principal do projeto, execute o comando:
+
+```powershell
+docker build -t data-harvest-etl .
+```
+
+Esse comando constrói a imagem Docker utilizando as configurações do `Dockerfile` e as dependências do `requirements.txt`.
+
+### Execução do pipeline
+
+No terminal PowerShell, na raiz do repositório, execute:
+
+```powershell
+docker run --rm --mount "type=bind,source=${PWD}\data,target=/app/data" data-harvest-etl
+```
+
+O comando monta a pasta `data` do computador no diretório `/app/data` do contêiner, permitindo que o pipeline acesse os arquivos CSV sem incorporá-los à imagem Docker.
+
+O banco SQLite gerado ou atualizado fica disponível em `data/sprint2_etl.db`.
+
+### Validação da execução
+
+Ao executar o pipeline, os arquivos CSV são lidos, os dados são carregados no banco SQLite e a integridade do banco é verificada.
+
+A execução deve apresentar mensagens semelhantes a:
 
 ```text
-data/
-  raw/                 # Dados de origem, preservados sem transformação
-  processed/           # CSVs tratados, resumos e gráficos dos pipelines
-src/
-  pipelines/           # Um pipeline independente para cada conjunto de dados
-sql/                   # Dump do banco Downtime e consultas de análise
+Lido clean_ai4i.csv: 10000 linhas
+Lido ai4i2020.csv: 10000 linhas
+UDI e Product ID recuperados com sucesso.
+Lido clean_downtime.csv: 2500 linhas
+
+Carga ETL concluída com sucesso!
+assembly_lines: 3
+failure_modes: 5
+machine_downtime_logs: 2500
+machines: 3
+process_readings: 10000
+product_types: 3
+reading_failure_modes: 373
+Novas leituras: 0
+Novos modos de falha: 0
+Novos logs de Downtime: 0
+Integridade do SQLite: OK
+Banco: /app/data/sprint2_etl.db
 ```
 
-## Configuração
+A mensagem `Integridade do SQLite: OK` indica que a verificação de integridade do banco foi concluída com sucesso.
 
-Requer Python 3.10 ou superior.
+### Verificação da imagem
+
+Para confirmar que a imagem Docker foi criada, execute:
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+docker images
 ```
 
-## Executar o banco de dados
-
-Configure o arquivo `.env` na raiz do projeto. Se ainda não existir, crie-o a
-partir do exemplo:
-
-```powershell
-Copy-Item .env.example .env
-```
-
-Edite `.env` e defina os dados de acesso do PostgreSQL. No Windows, se a porta
-`5432` já estiver ocupada por outra instalação do PostgreSQL, use `DB_PORT=5433`.
-O mesmo valor será usado pelo Docker e pelo script Python.
-
-Inicie o container e confirme que o banco está pronto:
-
-```powershell
-docker compose up -d
-docker compose ps
-docker compose exec -T db pg_isready
-```
-
-Crie as tabelas definidas nos modelos:
-
-```powershell
-python src\database.py
-```
-
-Para parar o container sem apagar os dados persistidos:
-
-```powershell
-docker compose down
-```
-
-Evite `docker compose down -v` se quiser preservar os dados do banco: a opção
-`-v` também remove o volume.
-
-## Executar os pipelines
-
-Execute os comandos a partir da raiz do repositório. Os caminhos padrão para os
-dados de entrada e saída já estão configurados; argumentos posicionais podem
-ser usados para substituí-los.
-
-```powershell
-python src\pipelines\downtime.py
-python src\pipelines\ai4i2020.py
-```
-
-Para especificar outros caminhos:
-
-```powershell
-python src\pipelines\downtime.py caminho\para\entrada.csv caminho\para\saida
-python src\pipelines\ai4i2020.py caminho\para\entrada.csv caminho\para\saida
-```
-
-Cada pipeline gera um CSV tratado, um resumo agregado e um gráfico em
-`data/processed/<conjunto>/`.
-
-## SQL
-
-- `sql/downtime_dump.sql` contém a estrutura e os dados de exemplo do banco
-  Downtime.
-- `sql/downtime_queries.sql` reúne as consultas analíticas para esse conjunto.
+A imagem `data-harvest-etl:latest` deverá aparecer na lista de imagens disponíveis.

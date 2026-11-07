@@ -11,8 +11,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 FAIL_MODES = ["twf", "hdf", "pwf", "osf", "rnf"]
-ROOT = Path(__file__).resolve().parents[2]
-
+ROOT = Path(__file__).resolve().parents[1]
 
 def to_snake(name):
     name = (
@@ -27,9 +26,6 @@ def to_snake(name):
 def clean(raw):
     df = raw.rename(columns=to_snake)
     print(f"{len(df)} linhas lidas")
-
-    ids = [column for column in ("udi", "product_id") if column in df.columns]
-    df = df.drop(columns=ids)
 
     modes = [column for column in FAIL_MODES if column in df.columns]
     if "machine_failure" in df.columns and modes:
