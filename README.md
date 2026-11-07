@@ -88,3 +88,14 @@ Cada pipeline gera um CSV tratado, um resumo agregado e um gráfico em
 - `sql/downtime_dump.sql` contém a estrutura e os dados de exemplo do banco
   Downtime.
 - `sql/downtime_queries.sql` reúne as consultas analíticas para esse conjunto.
+
+
+## Como Executar a Estrutura SQLite e o Processo ETL
+
+### 1. Criar e Validar o Schema no SQLite
+Para criar as tabelas e validar a estrutura do banco de dados relacional:
+```bash
+python sql/validate_schema.py
+
+python ai4i2020/pipeline_ai4i.py
+
