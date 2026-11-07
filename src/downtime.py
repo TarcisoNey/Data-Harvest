@@ -22,7 +22,7 @@ POSITIVE_ONLY = [
     "tool_vibration",
 ]
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 
 
 # Função que padroniza o nome de uma coluna para o formato "snake_case" (letras minúsculas e separadas por underline)

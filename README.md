@@ -1,11 +1,16 @@
 ## Execução do Pipeline ETL com Docker
 
-O pipeline ETL da Sprint 2 pode ser executado utilizando Docker, permitindo realizar a carga dos dados em um ambiente isolado, com as dependências Python instaladas automaticamente.
+O pipeline ETL (`src/etl_sqlite.py`) carrega o conjunto **Downtime** no banco
+SQLite, seguindo o schema de `sql/schema_sqlite.sql`:
+`assembly_lines` → `machines` → `machine_downtime_logs`.
+
+Ele pode ser executado utilizando Docker, permitindo realizar a carga dos dados em um ambiente isolado, com as dependências Python instaladas automaticamente.
 
 ### Pré-requisitos
 
 - Docker Desktop instalado e em execução.
-- Arquivos CSV necessários disponíveis na pasta `data`.
+- CSV limpo do Downtime em `data/processed/downtime/clean_downtime.csv`.
+  Se ele não existir, gere com `python src/downtime.py`.
 
 ### Construção da imagem
 
@@ -29,6 +34,10 @@ O comando monta a pasta `data` do computador no diretório `/app/data` do contê
 
 O banco SQLite gerado ou atualizado fica disponível em `data/sprint2_etl.db`.
 
+> Se você tem um `data/sprint2_etl.db` antigo, criado quando o ETL também
+> carregava o AI4I, apague-o antes. O ETL não sobrescreve um banco com
+> tabelas diferentes das do schema atual.
+
 ### Validação da execução
 
 Ao executar o pipeline, os arquivos CSV são lidos, os dados são carregados no banco SQLite e a integridade do banco é verificada.
@@ -36,25 +45,20 @@ Ao executar o pipeline, os arquivos CSV são lidos, os dados são carregados no 
 A execução deve apresentar mensagens semelhantes a:
 
 ```text
-Lido clean_ai4i.csv: 10000 linhas
-Lido ai4i2020.csv: 10000 linhas
-UDI e Product ID recuperados com sucesso.
 Lido clean_downtime.csv: 2500 linhas
+Schema oficial criado em banco vazio: /app/data/sprint2_etl.db
 
 Carga ETL concluída com sucesso!
 assembly_lines: 3
-failure_modes: 5
 machine_downtime_logs: 2500
 machines: 3
-process_readings: 10000
-product_types: 3
-reading_failure_modes: 373
-Novas leituras: 0
-Novos modos de falha: 0
-Novos logs de Downtime: 0
+Novos logs de Downtime: 2500
 Integridade do SQLite: OK
 Banco: /app/data/sprint2_etl.db
 ```
+
+Rodando de novo com o mesmo CSV, a carga não duplica registros e mostra
+`Novos logs de Downtime: 0`.
 
 A mensagem `Integridade do SQLite: OK` indica que a verificação de integridade do banco foi concluída com sucesso.
 
@@ -67,3 +71,14 @@ docker images
 ```
 
 A imagem `data-harvest-etl:latest` deverá aparecer na lista de imagens disponíveis.
+
+## Execução sem Docker
+
+Na raiz do repositório:
+
+```powershell
+python src\downtime.py           # limpa o CSV bruto -> data/processed/downtime/
+python src\etl_sqlite.py         # carrega no SQLite -> data/sprint2_etl.db
+python teste.py                  # conta os registros e verifica a integridade
+python sql\validate_schema.py    # valida PKs, FKs e restrições do schema
+```
