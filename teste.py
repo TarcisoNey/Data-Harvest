@@ -2,21 +2,12 @@
 import sqlite3
 from pathlib import Path
 
-# Banco gerado pelo pipeline ETL da Sprint 2
-RAIZ = Path(__file__).resolve().parent
-BANCO = RAIZ / "data" / "sprint2_etl.db"
+BANCO = Path(__file__).resolve().parent / "data" / "sprint2_etl.db"
 
 if not BANCO.is_file():
-    raise FileNotFoundError(
-        f"Banco não encontrado: {BANCO}\n"
-        "Execute primeiro o pipeline ETL."
-    )
+    raise FileNotFoundError(f"Banco não encontrado: {BANCO}")
 
-# Abrir o banco sem criar arquivos novos
-conexao = sqlite3.connect(
-    BANCO.as_uri() + "?mode=ro",
-    uri=True
-)
+conexao = sqlite3.connect(BANCO)
 
 try:
     tabelas = conexao.execute("""
