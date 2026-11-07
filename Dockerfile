@@ -9,4 +9,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-CMD ["python", "ai4i2020/lerCSVCpy"]
+CMD ["python", "src/etl_sqlite.py"]
