@@ -82,3 +82,34 @@ python src\etl_sqlite.py         # carrega no SQLite -> data/sprint2_etl.db
 python teste.py                  # conta os registros e verifica a integridade
 python sql\validate_schema.py    # valida PKs, FKs e restrições do schema
 ```
+
+## PostgreSQL e relatórios para o RAG
+
+Com o container do PostgreSQL rodando (`docker compose up -d`) e o `.env`
+configurado:
+
+```powershell
+python src\load_postgres.py      # carrega o CSV limpo nas tabelas de src\database.py
+python src\relatorios.py         # gera os relatórios a partir do PostgreSQL
+```
+
+O `load_postgres.py` não duplica dados: se as tabelas já estiverem carregadas,
+ele não faz nada. Use `--recriar` para apagar e carregar de novo.
+
+O `relatorios.py` gera, em `data/processed/relatorios/`:
+
+- `relatorio_downtime.md`: visão geral, falhas por mês, perfil dos sensores,
+  zonas de risco, diagnósticos (superaquecimento, torque alto e baixo, pressão
+  hidráulica baixa) e recomendações por máquina;
+- `documentos_rag.jsonl`: os mesmos conteúdos como documentos curtos, um por
+  linha, com `id`, `text` e `metadata`, prontos para indexar no ChromaDB.
+
+Para gerar a partir do SQLite do ETL em vez do PostgreSQL:
+
+```powershell
+python src\relatorios.py --url sqlite:///data/sprint2_etl.db
+```
+
+As zonas de risco e as recomendações são heurísticas: usam a frequência
+histórica de falhas em cada faixa de valores dos sensores. Não são um modelo
+preditivo treinado.
