@@ -1,0 +1,13 @@
+# Paleta verde e amarela solicitada, no estilo John Deere.
+# Os ajustes de cartões, gráficos e chat ficam em app.py.
+[theme]
+base = "light"
+primaryColor = "#367C2B"
+backgroundColor = "#F5F7F2"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#1F2D1C"
+borderColor = "#DCE5D4"
+font = "sans serif"
+[browser]
+# Desativa o envio de estatísticas de uso do Streamlit.
+gatherUsageStats = false
