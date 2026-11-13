@@ -16,7 +16,7 @@ SENSORS = {
     'Hydraulic_Pressure(bar)': 'Pressão hidráulica (bar)',
     'Coolant_Pressure(bar)': 'Pressão de refrigeração (bar)',
     'Air_System_Pressure(bar)': 'Pressão de ar (bar)',
-    'Coolant_Temperature': 'Temperatura de refrigeração',
+    'Coolant_Temperature': 'Temperatura de refrigeração (°C)',
     'Hydraulic_Oil_Temperature(°C)': 'Temperatura do óleo (°C)',
     'Spindle_Bearing_Temperature(°C)': 'Temperatura do rolamento (°C)',
     'Spindle_Vibration(µm)': 'Vibração do eixo (µm)',
@@ -162,3 +162,55 @@ def sensor_differences(df, sensors):
         if pd.notna(yes) and pd.notna(no) and no != 0:
             rows.append({'sensor': SENSORS[s], 'variacao': (yes-no)/abs(no)*100})
     return pd.DataFrame(rows, columns=['sensor', 'variacao']).sort_values('variacao', key=lambda s: s.abs(), ascending=False)
+
+
+# Critérios das faixas de risco: os mesmos de src/relatorios.py, para o
+# dashboard e os relatórios usados pelo agente dizerem a mesma coisa.
+N_FAIXAS = 5          # quintis
+LIFT_RISCO = 1.4      # faixa de risco: taxa >= 1,4x a taxa geral
+SUPORTE_MIN = 50      # leituras mínimas para uma faixa contar como sinal
+
+
+def risk_bands(df, sensor, n=N_FAIXAS):
+    """Taxa de falha por faixa de valores (quantis) de um sensor.
+
+    Devolve uma linha por faixa: inicio, fim, leituras, falhas, taxa (%) e
+    risco (True quando a taxa é pelo menos LIFT_RISCO vezes a taxa geral e a
+    faixa tem leituras suficientes). Usa só leituras com situação conhecida.
+    """
+    base = df.loc[df._failure.notna() & df[sensor].notna(), [sensor, '_failure']]
+    cols = ['inicio', 'fim', 'leituras', 'falhas', 'taxa', 'risco']
+    if len(base) < n * 2 or base[sensor].nunique() < n:
+        return pd.DataFrame(columns=cols)
+    faixas = pd.qcut(base[sensor], n, duplicates='drop')
+    out = base.groupby(faixas, observed=True)['_failure'].agg(leituras='size', falhas='sum').reset_index()
+    out['inicio'] = [i.left for i in out[sensor]]
+    out['fim'] = [i.right for i in out[sensor]]
+    out.loc[0, 'inicio'] = base[sensor].min()
+    out['taxa'] = out.falhas / out.leituras * 100
+    geral = base._failure.mean() * 100
+    out['risco'] = (out.taxa >= geral * LIFT_RISCO) & (out.leituras >= SUPORTE_MIN)
+    return out[cols]
+
+
+def strongest_signal(df, sensors):
+    """Faixa de sensor com a maior taxa de falha (entre as faixas de risco).
+
+    Devolve um dict com sensor, inicio, fim, leituras, falhas, taxa e a taxa
+    geral, ou None quando nenhuma faixa se destaca no recorte.
+    """
+    known = df._failure.dropna()
+    if known.empty or known.all() or not known.any():
+        return None  # sem contraste: todas falham ou nenhuma falha
+    melhor = None
+    for s in sensors:
+        faixas = risk_bands(df, s)
+        risco = faixas[faixas.risco] if not faixas.empty else faixas
+        if not risco.empty:
+            linha = risco.loc[risco.taxa.idxmax()]
+            if melhor is None or linha.taxa > melhor['taxa']:
+                melhor = {'sensor': s, **{k: linha[k] for k in ('inicio', 'fim', 'leituras', 'falhas', 'taxa')}}
+    if melhor:
+        melhor['geral'] = known.mean() * 100
+    return melhor
+

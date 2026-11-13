@@ -18,9 +18,9 @@ As zonas de risco e as recomendações são heurísticas baseadas na frequência
 histórica de falhas em cada faixa de valores. Não são um modelo preditivo
 treinado e devem ser lidas como apoio ao diagnóstico.
 
-Uso (na raiz do repositório):
+Uso (na raiz do repositório, depois de python src/etl.py):
     python src/relatorios.py                                  # PostgreSQL do .env
-    python src/relatorios.py --url sqlite:///data/sprint2_etl.db
+    python src/relatorios.py --url postgresql+psycopg2://usuario:senha@host:5432/banco
 """
 import argparse
 import json
@@ -80,7 +80,7 @@ PERCENTIL_ALTO = 0.90
 PERCENTIL_BAIXO = 0.10
 
 # ---------------------------------------------------------------------------
-# Consultas SQL (portáveis entre PostgreSQL e SQLite)
+# Consultas SQL (PostgreSQL)
 # ---------------------------------------------------------------------------
 SQL_BASE = text(f"""
     SELECT l.id, l.machine_id, a.name AS assembly_line, l.date,

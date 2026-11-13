@@ -1,5 +1,5 @@
 # Paleta verde e amarela solicitada, no estilo John Deere.
-# Os ajustes de cartões, gráficos e chat ficam em app.py.
+# Os ajustes de cartões, gráficos e chat ficam em dashboard/dashboard.css.
 [theme]
 base = "light"
 primaryColor = "#367C2B"

@@ -1,232 +1,464 @@
 """Interface do Dashboard Industrial — Data Harvest.
 
-Monta o layout inspirado no Figma, recebe o CSV e apresenta os resultados
-calculados em data.py. Plotly exibe os gráficos interativos. O painel de chat é apenas visual, sem lógica de IA.
+Monta o layout inspirado no Figma, lê o CSV limpo do Downtime e apresenta os
+resultados calculados em metricas.py. Plotly exibe os gráficos interativos.
+O painel da direita conversa com o agente RAG de src/agente (Gemini), que
+cruza o banco SQL com os manuais indexados no ChromaDB.
+
+Execução (na raiz do repositório):
+    python -m streamlit run dashboard/app.py
 """
-# EXECUCÇÃO: cd .\dashboard
-# EXECUCÇÃO: python -m streamlit run app.py
-# TEM QUE RODAR PELO TERMINAL
-
-
 import hashlib
+import json
+import re
+import sys
 from html import escape
 from pathlib import Path
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-from data import SENSORS, read_csv, filter_data, summary, monthly, by_machine, sensor_monthly, sensor_differences
 
-# A página larga acomoda os gráficos à esquerda e o chat à direita.
-st.set_page_config(page_title='Data Harvest • Dashboard Industrial', page_icon='◈', layout='wide', initial_sidebar_state='collapsed')
-# Paleta solicitada: verde principal e amarelo de destaque, no estilo John Deere.
-# Fundos claros e textos verde-escuros mantêm o contraste nos cartões.
+# Permite importar metricas.py e o pacote src.agente de qualquer pasta.
+APP_DIR = Path(__file__).resolve().parent
+RAIZ = APP_DIR.parent
+for caminho in (str(APP_DIR), str(RAIZ)):
+    if caminho not in sys.path:
+        sys.path.insert(0, caminho)
+
+from metricas import (SENSORS, LIFT_RISCO, by_machine, filter_data, monthly, read_csv, risk_bands,  # noqa: E402
+                      sensor_differences, sensor_monthly, strongest_signal, summary)
+
+# Fonte de dados: o PostgreSQL do projeto (carregado por src/etl.py). Se o
+# banco estiver fora do ar, usa o CSV limpo gerado por src/downtime.py.
+CSV_PADRAO = RAIZ / 'data' / 'processed' / 'downtime' / 'clean_downtime.csv'
+SQL_LEITURAS = """
+SELECT l.date::date AS date, l.machine_id, a.name AS assembly_line_no,
+       l.hydraulic_pressure, l.coolant_pressure, l.air_system_pressure,
+       l.coolant_temperature, l.hydraulic_oil_temperature, l.spindle_bearing_temperature,
+       l.spindle_vibration, l.tool_vibration, l.spindle_speed, l.voltage, l.torque, l.cutting,
+       l.downtime_status AS downtime
+FROM machine_downtime_logs l
+JOIN machines m ON m.id = l.machine_id
+JOIN assembly_lines a ON a.id = m.assembly_line_id
+ORDER BY l.id
+"""
+
+
+@st.cache_data(ttl=300, show_spinner='Carregando dados do banco…')
+def carregar_dados():
+    """Devolve (bytes do CSV, descrição da fonte, aviso ou None).
+
+    Os dados do banco são convertidos para CSV para passar pela mesma leitura
+    e validação de metricas.read_csv, seja qual for a origem.
+    """
+    try:
+        from src.database import get_conn
+
+        conn = get_conn(somente_leitura=True)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(SQL_LEITURAS)
+                df = pd.DataFrame(cur.fetchall(), columns=[c.name for c in cur.description])
+        finally:
+            conn.close()
+        if df.empty:
+            raise RuntimeError('o banco está vazio. Rode: python src/etl.py')
+        return df.to_csv(index=False).encode(), 'PostgreSQL', None
+    except Exception as erro:
+        if CSV_PADRAO.is_file():
+            return CSV_PADRAO.read_bytes(), 'CSV local', f'Banco indisponível ({erro}). Mostrando o CSV local.'
+        return None, None, f'Banco indisponível ({erro}) e CSV local não encontrado.'
+
+st.set_page_config(page_title='Dashboard Industrial • Data Harvest', page_icon=':material/precision_manufacturing:',
+                   layout='wide', initial_sidebar_state='collapsed')
+
+# Paleta pedida: verde e amarelo, no estilo John Deere. O verde identifica o
+# produto e a interface (cabeçalho, botões, foco). Nos gráficos, o amarelo com
+# contorno escuro marca FALHA, como fita de sinalização de fábrica, e o sálvia
+# apagado marca "sem falha", que fica em segundo plano.
 GREEN, YELLOW = '#367C2B', '#FFDD00'
-INK, MUTED, GRID = '#1F2D1C', '#58684F', '#E5ECDD'
-# Complementa o tema de .streamlit/config.toml com cartões, tipografia e cores
-# da referência. Em telas menores, permite que as colunas quebrem de linha.
+INK, MUTED, GRID, SAGE = '#1F2D1C', '#5A6B52', '#E3E9DC', '#C9D6BF'
+FONT = '"Source Sans", "Source Sans Pro", sans-serif'
+MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez']
 st.html(Path(__file__).with_name('dashboard.css'))
 
-def chart(fig, height=170, key=None):
-    """Aplica o mesmo estilo a todos os gráficos Plotly e os exibe no cartão."""
-    titled_x = bool(fig.layout.xaxis.title.text)
-    fig.update_layout(height=height, margin={'l': 8, 'r': 8, 't': 24 if len(fig.data) > 1 else 6, 'b': 40 if titled_x else 22},
-                    paper_bgcolor='white', plot_bgcolor='white',
-                    font={'color': MUTED, 'size': 11}, legend={'orientation': 'h', 'y': 1.01, 'yanchor': 'bottom', 'x': 1, 'xanchor': 'right'},
-                    hoverlabel={'bgcolor': 'white','font_color': INK}, colorway=[GREEN, YELLOW])
-    # O contorno verde mantém a borda das barras amarelas visível no fundo branco.
-    fig.update_traces(marker_line_color=GREEN,marker_line_width=0.7,selector={'type': 'bar'})
-    fig.update_xaxes(showgrid=False, automargin=True, title_standoff=8)
-    fig.update_layout(barcornerradius=4)
-    fig.update_yaxes(gridcolor=GRID, zeroline=False, automargin=True, title_standoff=8)
-    st.plotly_chart(fig, width='stretch', key=key, theme=None, config={'displayModeBar':False})
 
-def section_heading(title, subtitle):
-    """Mantém título e legenda no mesmo bloco com espaçamento explícito."""
-    st.html(f'<header class="section-heading"><h2>{escape(title)}</h2><p>{escape(subtitle)}</p></header>')
+def num(valor, casas=0):
+    """Número no formato brasileiro: 1.265 / 50,6."""
+    return f'{valor:,.{casas}f}'.replace(',', '§').replace('.', ',').replace('§', '.')
+
+
+def pct(valor, casas=1):
+    return f'{num(valor, casas)}%' if valor is not None and pd.notna(valor) else '—'
+
+
+def nome_maquina(machine_id):
+    """'Makino-L1-Unit1-2013' -> 'Makino L1 (2013)'."""
+    m = re.match(r'Makino-(L\d+)-Unit\d+-(\d{4})$', str(machine_id))
+    return f'Makino {m.group(1)} ({m.group(2)})' if m else str(machine_id)
+
+
+def unidade(sensor):
+    m = re.search(r'\(([^)]*)\)\s*$', SENSORS[sensor])
+    return m.group(1) if m else ''
+
+
+def sem_unidade(sensor):
+    return re.sub(r'\s*\([^)]*\)\s*$', '', SENSORS[sensor])
+
+
+def chart(fig, height=250, key=None, topo=None):
+    """Aplica o mesmo estilo a todos os gráficos Plotly e os exibe no painel."""
+    fig.update_layout(
+        height=height, margin={'l': 4, 'r': 8, 't': topo if topo is not None else (30 if len(fig.data) > 1 else 8), 'b': 4},
+        paper_bgcolor='white', plot_bgcolor='white', separators=',.',
+        font={'family': FONT, 'color': MUTED, 'size': 12},
+        legend={'orientation': 'h', 'y': 1.0, 'yanchor': 'bottom', 'x': 0, 'xanchor': 'left',
+                'font': {'size': 12, 'color': INK}},
+        hoverlabel={'bgcolor': 'white', 'font': {'family': FONT, 'color': INK}, 'bordercolor': GRID},
+        bargap=0.28,
+    )
+    fig.update_xaxes(showgrid=False, automargin=True, linecolor=GRID, tickfont={'size': 11})
+    fig.update_yaxes(gridcolor=GRID, zeroline=False, automargin=True, tickfont={'size': 11})
+    st.plotly_chart(fig, width='stretch', key=key, theme=None, config={'displayModeBar': False})
+
+
+def section_heading(title, subtitle=None):
+    """Título do painel e, opcionalmente, uma frase dizendo como lê-lo."""
+    sub = f'<p>{escape(subtitle)}</p>' if subtitle else ''
+    st.html(f'<header class="section-heading"><h2>{escape(title)}</h2>{sub}</header>')
+
+
+SUGESTOES = [
+    'Compare as taxas de falha das máquinas.',
+    'Como as falhas evoluíram por mês?',
+    'Pressão hidráulica baixa: quantas falhas e o que fazer?',
+    'Qual máquina mais precisa de manutenção agora?',
+]
+
+
+@st.cache_resource(show_spinner=False)
+def carregar_agente():
+    """Cria o agente uma vez por sessão do servidor.
+
+    Devolve (agente, None) ou (None, mensagem de erro) quando falta a chave
+    do LLM, o banco PostgreSQL ou alguma dependência.
+    """
+    try:
+        from src.agente import AgenteRAG
+        return AgenteRAG(), None
+    except Exception as erro:  # sem GEMINI_API_KEY, sem banco, etc.
+        return None, str(erro)
 
 
 def chat_panel():
-    """Desenha o espaço reservado ao chat, com campo e envio desativados.
-
-    As sugestões são textos estáticos: nenhuma mensagem é processada,
-    nenhuma resposta é gerada e nenhum serviço de IA é chamado.
-    """
+    """Chat com o agente RAG: perguntas sugeridas, histórico e campo de envio."""
     with st.container(key='assistant'):
-        section_heading('✦ Assistente IA', 'Explore seus dados em linguagem natural')
-        st.html('<div class="bubble"><strong>Assistente Industrial</strong><p>Espaço reservado para conversar sobre falhas, sensores e máquinas.</p></div>')
-        st.html('<p class="assistant-label">Perguntas sugeridas</p>')
-        for text in ['Compare as taxas das máquinas.', 'Como as falhas evoluíram por mês?', 'Quais sensores mais diferem?', 'Quais colunas têm dados ausentes?', 'Posso calcular as horas paradas?']:
-            st.html(f'<div class="suggestion">{escape(text)}</div>')
-        with st.container(key='composer'):
-            st.caption('Prévia do assistente')
-            field, send = st.columns([4, 1], gap='small', vertical_alignment='center')
-            field.text_input('Sua pergunta', placeholder='Pergunte sobre os dados…', disabled=True, label_visibility='collapsed')
-            send.button('➤', help='Enviar pergunta', disabled=True, width='stretch')
+        section_heading('Assistente de manutenção', 'Responde com os dados das máquinas e os manuais')
+        agente, erro = carregar_agente()
+        historico = st.session_state.setdefault('chat', [])
 
-def fmt(n: int) -> str:
-    return f'{n:,}'.replace(',', '.')
+        if agente is None:
+            if 'GEMINI_API_KEY' in erro:
+                erro = ('Coloque a chave do Google AI Studio em GEMINI_API_KEY, no arquivo .env, '
+                        'e reinicie o dashboard. Os gráficos funcionam sem ela.')
+            st.html('<div class="bubble aviso"><strong>Assistente desligado</strong>'
+                    f'<p>{escape(erro)}</p></div>')
+        elif not historico:
+            st.html('<div class="bubble"><p>Pergunte sobre falhas, sensores ou o que fazer em cada máquina. '
+                    'Cada resposta mostra as consultas e os trechos de manual usados.</p></div>')
+
+        with st.container(key='messages'):
+            for papel, texto, *extra in historico:
+                with st.chat_message(papel, avatar=':material/person:' if papel == 'user' else ':material/smart_toy:'):
+                    st.markdown(texto)
+                    if extra and extra[0]:
+                        mostrar_passos(extra[0], extra[1] if len(extra) > 1 else None)
+
+        pergunta = None
+        if agente is not None and not historico:
+            st.html('<p class="assistant-label">Para começar</p>')
+            for i, texto in enumerate(SUGESTOES):
+                if st.button(texto, key=f'sugestao_{i}', width='stretch'):
+                    pergunta = texto
+
+        with st.container(key='composer'):
+            with st.form('pergunta', clear_on_submit=True, border=False):
+                field, send = st.columns([2.1, 1], gap='small', vertical_alignment='center')
+                digitada = field.text_input('Sua pergunta', placeholder='Sua pergunta',
+                                            disabled=agente is None, label_visibility='collapsed')
+                enviada = send.form_submit_button('Enviar', type='primary', disabled=agente is None,
+                                                  width='stretch')
+            if historico and st.button('Limpar conversa', key='limpar', type='tertiary'):
+                st.session_state.chat = []
+                st.rerun()
+        if enviada and digitada.strip():
+            pergunta = digitada.strip()
+
+        if pergunta:
+            historico.append(('user', pergunta, []))
+            with st.spinner('Consultando dados e manuais…'):
+                try:
+                    r = agente.perguntar(pergunta)
+                    resposta, passos, tempos = r.texto or '_(sem resposta)_', r.passos, r.resumo_tempos()
+                except Exception as exc:  # erro de rede, cota da API, etc.
+                    resposta, passos, tempos = f'Não consegui responder agora: `{exc}`', [], None
+            historico.append(('assistant', resposta, passos, tempos))
+            st.rerun()
+
+
+def mostrar_passos(passos, tempos=None):
+    """Mostra as consultas SQL e os trechos de manual que embasaram a resposta."""
+    consultas = [p for p in passos if p['ferramenta'] == 'consultar_banco']
+    buscas = [p for p in passos if p['ferramenta'] == 'buscar_manuais']
+    def contar(n, um, varios):
+        return f'{n} {um if n == 1 else varios}'
+
+    with st.expander(f"Como cheguei nessa resposta: {contar(len(consultas), 'consulta', 'consultas')} ao banco, "
+                     f"{contar(len(buscas), 'busca', 'buscas')} nos manuais"):
+        for p in consultas:
+            try:
+                sql = json.loads(p['argumentos']).get('sql', p['argumentos'])
+            except (json.JSONDecodeError, AttributeError):
+                sql = p['argumentos']
+            st.code(sql, language='sql', wrap_lines=True)
+            res = p['resultado']
+            if 'erro' in res:
+                st.caption(f"Erro (o agente corrigiu e tentou de novo): {res['erro']}")
+            elif res.get('linhas'):
+                st.dataframe(pd.DataFrame(res['linhas'], columns=res['colunas']).head(10),
+                             hide_index=True, width='stretch')
+        if tempos:
+            st.caption(f'Tempo: {tempos}.')
+        trechos = {}
+        for p in buscas:
+            for t in p['resultado'].get('trechos', []):
+                trechos.setdefault(t['id'], t['fonte'])
+        if trechos:
+            st.markdown('**Trechos consultados:**\n' + '\n'.join(
+                f'- `{i}` — {escape(f)}' for i, f in trechos.items()))
+
+def linha_sinal(sinal):
+    """Aviso de uma linha: a faixa de sensor onde as falhas mais se concentram."""
+    if sinal is None:
+        return
+    u = unidade(sinal['sensor'])
+    nb = ' '  # espaço que não quebra: o número fica junto da unidade
+    faixa = f"{num(sinal['inicio'], 2)} e {num(sinal['fim'], 2)}{nb + u if u else ''}"
+    st.html(
+        '<p class="sinal"><strong>Onde as falhas se concentram:</strong> '
+        f'{escape(sem_unidade(sinal["sensor"]).lower())} entre {escape(faixa)}. '
+        f'{pct(sinal["taxa"])} das {num(sinal["leituras"])} leituras nessa faixa terminaram em falha '
+        f'(geral: {pct(sinal["geral"])}).</p>')
+
+
+def cartoes_totais(total, falhas, taxa, maquinas):
+    celulas = [('Total de registros', num(total)), ('Registros com falha', num(falhas)),
+               ('Taxa de falhas', pct(taxa)), ('Máquinas analisadas', num(maquinas))]
+    itens = ''.join(f'<div class="kpi"><p>{r}</p><strong>{v}</strong></div>' for r, v in celulas)
+    st.html(f'<div class="kpis">{itens}</div>')
+
+
+def grafico_mensal(filtered, start, end):
+    m = monthly(filtered, start, end)
+    rotulos = [f'{MESES[p.month - 1].capitalize()}/{p.year}' for p in m.index]
+    dados = m[['registros', 'taxa']].to_numpy()
+    fig = go.Figure()
+    fig.add_bar(x=rotulos, y=m.falhas, name='Com falha', marker={'color': YELLOW, 'line': {'color': INK, 'width': 1}},
+                customdata=dados, hovertemplate='%{x}<br>Com falha: %{y}<br>Registros: %{customdata[0]}<br>'
+                                                'Taxa: %{customdata[1]:.1f}%<extra></extra>')
+    fig.add_bar(x=rotulos, y=m.sem_falha, name='Sem falha', marker={'color': SAGE, 'line': {'color': '#9FB394', 'width': 1}},
+                customdata=dados, hovertemplate='%{x}<br>Sem falha: %{y}<br>Registros: %{customdata[0]}<br>'
+                                                'Taxa: %{customdata[1]:.1f}%<extra></extra>')
+    fig.update_layout(barmode='group', legend={'x': 1, 'xanchor': 'right'})
+    chart(fig, 200, key='mensal')
+    pequenos = m[(m.registros > 0) & (m.registros < 10)]
+    if not pequenos.empty:
+        nomes = [f'{MESES[p.month - 1]}/{p.year}' for p in pequenos.index]
+        lista = nomes[0] if len(nomes) == 1 else ', '.join(nomes[:-1]) + ' e ' + nomes[-1]
+        st.caption(f'Amostra pequena (menos de 10 registros) em {lista}. Interprete as taxas com cautela.')
+
+
+def grafico_maquinas(filtered, taxa_geral):
+    dfm = by_machine(filtered).sort_values('taxa')
+    nomes = [nome_maquina(m) for m in dfm.Machine_ID]
+    textos = [f'{num(f)}/{num(c)} ({pct(t)})' if pd.notna(t) else 'sem classificação'
+              for f, c, t in dfm[['falhas', 'classificados', 'taxa']].itertuples(index=False, name=None)]
+    fig = go.Figure(go.Bar(
+        x=dfm.taxa, y=nomes, orientation='h', marker={'color': YELLOW, 'line': {'color': INK, 'width': 1}},
+        text=textos, textposition='inside', insidetextanchor='end', textfont={'color': INK, 'size': 12},
+        customdata=dfm.Machine_ID, hovertemplate='%{customdata}<br>%{text}<extra></extra>'))
+    if taxa_geral is not None:
+        fig.add_vline(x=taxa_geral, line={'color': INK, 'width': 1, 'dash': 'dot'})
+    fig.update_xaxes(range=[0, 100], ticksuffix='%', dtick=25, showgrid=True, gridcolor=GRID)
+    fig.update_yaxes(showgrid=False, tickfont={'size': 12, 'color': INK})
+    chart(fig, 200, key='maquinas')
+    if taxa_geral is not None:
+        st.caption(f'A linha pontilhada marca a taxa geral do recorte ({pct(taxa_geral)}).')
+
+
+def painel_sensor(filtered, sensor, taxa_geral):
+    section_heading(SENSORS[sensor], 'Valores no recorte atual')
+    u = unidade(sensor)
+    medias, por_mes, por_faixa = st.tabs(['Médias por situação', 'Evolução mensal', 'Taxa por faixa de valor'])
+    with medias:
+        grupos = [('Com falha', filtered.loc[filtered._failure.eq(True).fillna(False), sensor].dropna()),
+                  ('Sem falha', filtered.loc[filtered._failure.eq(False).fillna(False), sensor].dropna())]
+        valores = [g.mean() for _, g in grupos]
+        fig = go.Figure(go.Bar(
+            y=[n for n, _ in grupos], x=valores, orientation='h',
+            marker={'color': [YELLOW, SAGE], 'line': {'color': [INK, '#9FB394'], 'width': 1}},
+            text=[f'{num(v, 2)} {u}'.strip() if pd.notna(v) else 'sem leituras' for v in valores],
+            textposition='inside', insidetextanchor='end', textfont={'color': INK, 'size': 12},
+            customdata=[len(g) for _, g in grupos],
+            hovertemplate='%{y}<br>Média: %{x:.2f}<br>Leituras: %{customdata}<extra></extra>'))
+        fig.update_xaxes(rangemode='tozero', showgrid=True, gridcolor=GRID)
+        fig.update_yaxes(showgrid=False, tickfont={'size': 12, 'color': INK})
+        fig.update_layout(uirevision=sensor)
+        chart(fig, 150, key='sensor_medias')
+    with por_mes:
+        trend = sensor_monthly(filtered, sensor, filtered.Date.min(), filtered.Date.max())
+        if trend.leituras.sum() == 0:
+            st.info('O sensor escolhido não tem leituras válidas neste recorte.')
+        else:
+            rotulos = [f'{MESES[p.month - 1].capitalize()}/{p.year}' for p in trend.index]
+            fig = go.Figure(go.Scatter(
+                x=rotulos, y=trend.media.tolist(), mode='lines+markers', connectgaps=False,
+                line={'color': GREEN, 'width': 2}, marker={'color': GREEN, 'size': 6},
+                customdata=trend.leituras.tolist(),
+                hovertemplate='%{x}<br>Média: %{y:.2f} ' + u + '<br>Leituras: %{customdata}<extra></extra>'))
+            fig.update_layout(uirevision=sensor)
+            chart(fig, 150, key='sensor_mes')
+    with por_faixa:
+        faixas = risk_bands(filtered, sensor)
+        if faixas.empty or taxa_geral is None:
+            st.info('Para ver a taxa por faixa, o recorte precisa ter leituras com e sem falha.')
+        else:
+            casas = 0 if faixas.fim.max() >= 1000 else (1 if faixas.fim.max() >= 10 else 2)
+            rotulos = [f'{num(a, casas)} a {num(b, casas)}' for a, b in zip(faixas.inicio, faixas.fim)]
+            fig = go.Figure(go.Bar(
+                x=rotulos, y=faixas.taxa,
+                marker={'color': [YELLOW if r else SAGE for r in faixas.risco],
+                        'line': {'color': [INK if r else '#9FB394' for r in faixas.risco], 'width': 1}},
+                text=[pct(t, 0) for t in faixas.taxa], textposition='outside', textfont={'color': INK, 'size': 12},
+                customdata=faixas[['leituras', 'falhas']].to_numpy(),
+                hovertemplate='%{x} ' + u + '<br>%{customdata[1]} falhas em %{customdata[0]} leituras<extra></extra>'))
+            fig.add_hline(y=taxa_geral, line={'color': INK, 'width': 1, 'dash': 'dot'})
+            fig.update_yaxes(range=[0, 115], ticksuffix='%', dtick=50)
+            chart(fig, 150, key='faixas')
+            st.caption(f'Faixas em {u}, cada uma com um quinto das leituras. Em amarelo, taxa de falha pelo '
+                       f'menos {num(LIFT_RISCO, 1)} vez a geral (linha pontilhada).')
+
+
+def grafico_diferencas(filtered, sensors):
+    section_heading('Maiores diferenças entre sensores', 'Variação da média com falha em relação à média sem falha')
+    diffs = sensor_differences(filtered, sensors).head(4)
+    if diffs.empty:
+        st.info('A comparação precisa de leituras com e sem falha no recorte.')
+        return
+    nomes = [re.sub(r'\s*\([^)]*\)$', '', n) for n in diffs.sensor]
+    fig = go.Figure(go.Bar(
+        x=diffs.variacao.abs(), y=nomes, orientation='h', marker_color=GREEN,
+        text=[f'{"+" if v > 0 else "−"}{num(abs(v), 1)}%' for v in diffs.variacao],
+        textposition='inside', insidetextanchor='end', textfont={'color': 'white', 'size': 12},
+        hovertemplate='%{y}: %{text}<extra></extra>'))
+    fig.update_xaxes(visible=False)
+    fig.update_yaxes(autorange='reversed', showgrid=False, tickfont={'size': 12, 'color': INK})
+    chart(fig, 176, key='diferencas')
+    st.caption('Sinal negativo: a média é menor quando a máquina falha. Positivo: é maior.')
+
+
+def linha_qualidade(filtered, sensors):
+    ausentes = {s: int(filtered[s].isna().sum()) for s in sensors}
+    total = sum(ausentes.values())
+    if total == 0:
+        texto = f'Qualidade dos dados: nenhum valor ausente nos {len(sensors)} sensores deste recorte.'
+    else:
+        piores = sorted((s for s in ausentes if ausentes[s]), key=ausentes.get, reverse=True)[:4]
+        lista = ', '.join(f'{sem_unidade(s).lower()} ({num(ausentes[s])})' for s in piores)
+        texto = f'Qualidade dos dados: {num(total)} valores ausentes no recorte, a maioria em {lista}.'
+    st.html(f'<p class="qualidade">{escape(texto)}</p>')
 
 
 def render_dashboard() -> None:
-    st.html('<div class="brand">Data Harvest</div><h1 class="dashboard-title">Dashboard Industrial</h1>')
-    description = st.empty()
-    with st.container(key='topbar'):
-        filters = st.container(key='filters')
-    path = Path(__file__).with_name('clean_downtime.csv')
-    payload = path.read_bytes() if path.is_file() else None
+    payload, fonte, aviso = carregar_dados()
+    cabecalho = st.empty()
+    cabecalho.html('<div class="brand">Data Harvest</div><h1 class="dashboard-title">Dashboard Industrial</h1>')
+    if aviso:
+        st.warning(aviso)
     if payload is None:
-        # Sem fonte de dados, mostra um estado vazio em vez de números fictícios.
-        st.info('Coloque o arquivo clean_downtime.csv na pasta do app.py para exibir o dashboard.')
-        for col, label in zip(st.columns(4, gap="small"), ['Total de registros', 'Registros com falha', 'Taxa de falhas', 'Máquinas analisadas']):
-            col.metric(label, '—')
+        st.info('Para ver os dados, suba o banco com docker compose up -d db e rode python src/etl.py.')
         return
-    # data.py valida e padroniza o CSV, devolvendo os registros, a lista de
-    # sensores reconhecidos e o relatório de qualidade da fonte completa.
     try:
         df, sensors, report = read_csv(payload)
     except (ValueError, pd.errors.ParserError, pd.errors.EmptyDataError) as exc:
-        st.error(f'Não foi possível carregar o arquivo: {exc}')
+        st.error(f'Não foi possível ler os dados: {exc}')
         return
-    # Somente datas válidas definem o intervalo disponível no filtro de período.
     valid = df.Date.dropna()
     if valid.empty:
-        st.error('Nenhuma data válida encontrada na coluna Date.')
+        st.error('Nenhuma data válida encontrada nos dados.')
         return
     if report['datas_invalidas'] or report['situacoes_invalidas']:
-        st.warning(f"{report['datas_invalidas']} datas inválidas (excluídas dos filtros) e {report['situacoes_invalidas']} situações desconhecidas (fora do denominador das taxas).")
-    # Streamlit executa este arquivo novamente a cada mudança de filtro.
-    # A assinatura do conteúdo cria chaves diferentes ao trocar de CSV, evitando
-    # reaproveitar seleções de uma fonte anterior que não existam na nova fonte.
-    description.caption(f"Falhas, sensores e qualidade dos dados • {valid.min():%d/%m/%Y} a {valid.max():%d/%m/%Y}")
-    with filters:
-        fingerprint = hashlib.sha256(payload).hexdigest()[:12]
-        f1,f2,f3,f4 = st.columns([1.25,1,1,1.15], gap="small")
-        period = f1.date_input('Período', (valid.min().date(), valid.max().date()), min_value=valid.min().date(), max_value=valid.max().date(), format='DD/MM/YYYY', key='period_'+fingerprint)
-        available_machines = sorted(df.Machine_ID.unique())
+        st.warning(f"{report['datas_invalidas']} datas inválidas ficaram fora dos filtros e "
+                   f"{report['situacoes_invalidas']} situações desconhecidas ficaram fora das taxas.")
+    cabecalho.html('<div class="brand">Data Harvest</div><h1 class="dashboard-title">Dashboard Industrial</h1>'
+                   f'<p class="fonte">Falhas, sensores e qualidade dos dados de {valid.min():%d/%m/%Y} a '
+                   f'{valid.max():%d/%m/%Y}. Fonte: {escape(fonte)}.</p>')
+
+    # A assinatura do conteúdo gera chaves novas quando a fonte muda, para não
+    # reaproveitar seleções que não existem nos dados novos.
+    fingerprint = hashlib.sha256(payload).hexdigest()[:12]
+    with st.container(key='topbar'):
+        f1, f2, f3, f4 = st.columns([1.25, 1, 1, 1.15], gap='small')
+        period = f1.date_input('Período', (valid.min().date(), valid.max().date()), min_value=valid.min().date(),
+                               max_value=valid.max().date(), format='DD/MM/YYYY', key='period_' + fingerprint)
+        available = sorted(df.Machine_ID.unique())
         machine_key = 'machines_' + fingerprint
-        selected_machines = st.session_state.get(machine_key, available_machines)
-        if len(selected_machines) == len(available_machines):
-            machine_label = 'Todas as máquinas'
-        elif len(selected_machines) == 1:
-            machine_label = '1 máquina'
-        else:
-            machine_label = f'{len(selected_machines)} máquinas'
+        escolhidas = st.session_state.get(machine_key, available)
+        rotulo = ('Todas as máquinas' if len(escolhidas) == len(available)
+                  else nome_maquina(escolhidas[0]) if len(escolhidas) == 1 else f'{len(escolhidas)} máquinas')
         with f2:
             st.html('<p class="filter-label">Máquina</p>')
-            with st.popover(machine_label, width='stretch'):
-                machines = st.multiselect('Máquinas selecionadas', available_machines, default=available_machines, key=machine_key)
-        situation = f3.selectbox('Situação', ['Todos os registros', 'Com falha', 'Sem falha'], key='status_'+fingerprint)
-        sensor = f4.selectbox('Sensor em análise', sensors, format_func=lambda s:SENSORS[s], disabled=not sensors,
-            help='Atualiza as médias por situação e a evolução mensal do sensor.', key='sensor_'+fingerprint)
+            with st.popover(rotulo, width='stretch'):
+                machines = st.multiselect('Máquinas', available, default=available, key=machine_key,
+                                          format_func=nome_maquina)
+        situation = f3.selectbox('Situação', ['Todos os registros', 'Com falha', 'Sem falha'],
+                                 key='status_' + fingerprint)
+        sensor = f4.selectbox('Sensor em análise', sensors, format_func=lambda s: SENSORS[s],
+                              key='sensor_' + fingerprint)
     if not isinstance(period, tuple) or len(period) != 2:
-        st.info('Selecione o início e o fim do período.')
+        st.info('Escolha a data final do período.')
         return
-    start,end = period
+    start, end = period
     filtered = filter_data(df, start, end, machines, situation)
-    # Os quatro KPIs são recalculados com o recorte; nenhum valor da imagem
-    # é fixado no código. A formatação usa ponto de milhar e vírgula decimal.
     total, failures, rate, machine_count = summary(filtered)
-    for col,label,value in zip(st.columns(4, gap="small"), ['Total de registros', 'Registros com falha', 'Taxa de falhas', 'Máquinas analisadas'], [fmt(total),fmt(failures), f'{rate:.1f}%'.replace('.',',') if rate is not None else '—',fmt(machine_count)]):
-        col.metric(label,value)
-    unavailable = {sensor_name: int(filtered[sensor_name].isna().sum()) for sensor_name in sensors}
+    cartoes_totais(total, failures, rate, machine_count)
     if filtered.empty:
-        # Interrompe a montagem dos gráficos quando a seleção não tem dados.
-        st.info('Nenhum registro encontrado. Ajuste o período, as máquinas ou a situação.')
+        st.info('Nenhuma leitura neste recorte. Amplie o período ou escolha outras máquinas.')
         return
-    # Primeira linha: evolução mensal e comparação entre máquinas.
-    left,right = st.columns([1.65,1])
-    with left, st.container(border=True, key="monthly"):
-        section_heading('Falhas ao longo do tempo', 'Contagens mensais • passe o cursor para ver o tamanho da amostra')
-        # monthly inclui os meses sem registros. O hover mostra o tamanho da
-        # amostra e a taxa, para contextualizar a contagem de cada barra.
-        m = monthly(filtered,start,end)
-        labels = [f'{["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"][p.month-1]}/{p.year}' for p in m.index]
-        fig = go.Figure()
-        for field,label,color in [('falhas','Com falha',GREEN),('sem_falha','Sem falha',YELLOW)]:
-            fig.add_bar(x=labels,y=m[field],name=label,marker_color=color,customdata=m[['registros','classificados','taxa']].to_numpy(), hovertemplate='%{x}<br>'+label+': %{y}<br>Registros: %{customdata[0]}<br>Classificados: %{customdata[1]}<br>Taxa: %{customdata[2]:.1f}%<extra></extra>')
-        chart(fig)
-        # Destaca amostras pequenas, nas quais percentuais podem ser enganosos.
-        small = m[(m.registros>0)&(m.registros<10)]
-        if not small.empty:
-            st.caption('Amostra pequena (<10 registros): '+', '.join(str(p) for p in small.index)+'. Interprete as taxas com cautela.')
-    with right, st.container(border=True, key="machines"):
-        section_heading('Falhas por máquina', 'Contagem e taxa no recorte selecionado')
-        # Cada máquina tem seu próprio denominador de registros classificados;
-        # os rótulos mostram falhas / classificados junto da taxa percentual.
-        machines_df = by_machine(filtered)
-        machine_counts = machines_df[['falhas', 'classificados', 'taxa']]
-        machine_labels = [
-            f'{int(failures)}/{int(classified)} • {rate:.1f}%' if pd.notna(rate) else 'Sem classificação'
-            for failures, classified, rate in machine_counts.itertuples(index=False, name=None)
-        ]
-        fig=go.Figure(go.Bar(x=machines_df.taxa,y=machines_df.Machine_ID,orientation='h',marker_color=GREEN,
-            insidetextfont={'color': 'white'},outsidetextfont={'color': INK},
-            text=machine_labels,textposition='auto',customdata=machines_df[['falhas','classificados']].to_numpy(),hovertemplate='%{y}<br>Taxa: %{x:.1f}%<br>Falhas: %{customdata[0]} / %{customdata[1]}<extra></extra>'))
-        fig.update_xaxes(range=[0,100],ticksuffix='%')
-        chart(fig)
-    # Segunda linha: médias do sensor escolhido e ranking calculado entre sensores.
-    left,right=st.columns(2)
-    with left, st.container(border=True, key="comparison"):
-        section_heading(SENSORS[sensor] if sensor is not None else 'Leituras dos sensores', 'Valores no recorte atual')
-        if sensor:
-            comparison_tab, trend_tab = st.tabs(['Médias por situação', 'Evolução mensal'])
-            with comparison_tab:
-                # Separa os grupos sem preencher leituras ausentes. O título do
-                # eixo identifica a grandeza e a unidade que mudam com o seletor.
-                groups = [(name, filtered.loc[filtered._failure.eq(flag).fillna(False),sensor].dropna()) for flag,name in [(True,'Com falha'),(False,'Sem falha')]]
-                means=[values.mean() for _,values in groups]
-                # Texto branco no verde e escuro no amarelo para manter a leitura.
-                fig=go.Figure(go.Bar(y=[name for name,_ in groups],x=means,orientation='h',marker_color=[GREEN,YELLOW],insidetextfont={'color': ['white',INK]},outsidetextfont={'color': INK},text=[f'{v:.2f}' if pd.notna(v) else 'Sem leituras' for v in means],textposition='auto',customdata=[len(v) for _,v in groups],hovertemplate='%{y}<br>Média: %{x:.2f}<br>Leituras válidas: %{customdata}<extra></extra>'))
-                # Redefine a escala ao trocar de sensor, inclusive após aplicar
-                # zoom. Leituras de pressão e torque usam unidades diferentes.
-                fig.update_layout(xaxis_title=SENSORS[sensor], uirevision=sensor)
-                fig.update_xaxes(rangemode='tozero')
-                chart(fig,120,key='sensor_comparison')
-            with trend_tab:
-                # A série acompanha o sensor escolhido e os filtros do recorte.
-                # connectgaps=False mantém lacunas nos meses sem leituras.
-                trend = sensor_monthly(filtered,sensor,start,end)
-                if trend.leituras.sum() == 0:
-                    st.info('O sensor selecionado não tem leituras válidas neste recorte.')
-                else:
-                    fig=go.Figure(go.Scatter(x=trend.index.astype(str).tolist(),y=trend.media.tolist(),mode='lines+markers',
-                        name=SENSORS[sensor],line={'color': GREEN},marker={'color': GREEN,'line': {'color': YELLOW,'width': 1.5},'size': 7},connectgaps=False,customdata=trend.leituras.tolist(),
-                        hovertemplate='%{x}<br>Média: %{y:.2f}<br>Leituras válidas: %{customdata}<extra></extra>'))
-                    fig.update_layout(yaxis_title=SENSORS[sensor],xaxis_title='Mês',uirevision=sensor)
-                    chart(fig,120,key='sensor_monthly')
-        else:
-            st.info('Nenhuma coluna de sensor reconhecida.')
-    with right, st.container(border=True, key="differences"):
-        section_heading('Maiores diferenças entre sensores', 'Variação percentual • com falha vs. sem falha')
-        # O cálculo ordena por diferença percentual absoluta e mantém o sinal:
-        # negativo indica média menor nos registros com falha; positivo, maior.
-        diffs=sensor_differences(filtered,sensors).head(4)
-        if diffs.empty:
-            st.info('A comparação exige leituras nos dois grupos e média sem falha diferente de zero.')
-        else:
-            fig = go.Figure(go.Bar(
-                x=diffs.variacao.abs(), y=diffs.sensor, orientation='h',
-                marker_color=[GREEN if value < 0 else YELLOW for value in diffs.variacao],
-                text=[f'{value:+.1f}%'.replace('.', ',') for value in diffs.variacao],
-                textposition='auto', hovertemplate='%{y}<br>%{text}<extra></extra>',
-            ))
-            fig.update_xaxes(visible=False)
-            fig.update_yaxes(autorange='reversed', showgrid=False)
-            chart(fig, 132, key='sensor_differences')
-    # Qualidade calculada do recorte atual, sem copiar o total da imagem.
-    # O CSV limpo incluído tem zero ausentes; outros arquivos podem ter mais.
-    with st.container(border=True, key='quality'):
-        a,b=st.columns([1,3])
-        a.metric('Qualidade dos dados',fmt(sum(unavailable.values())), help='Leituras vazias ou não numéricas no recorte.')
-        with b:
-            highest = sorted(unavailable, key=unavailable.__getitem__, reverse=True)[:4]
-            for column, name in zip(st.columns(4), highest):
-                column.metric(SENSORS[name], f'{fmt(unavailable[name])} ausentes')
+    taxa_geral = rate if situation == 'Todos os registros' else None
+    linha_sinal(strongest_signal(filtered, sensors) if taxa_geral is not None else None)
+
+    esquerda, direita = st.columns([1.65, 1], gap='small')
+    with esquerda, st.container(border=True, key='monthly'):
+        section_heading('Falhas ao longo do tempo', 'Contagens mensais. Passe o cursor para ver o total e a taxa.')
+        grafico_mensal(filtered, start, end)
+    with direita, st.container(border=True, key='machines'):
+        section_heading('Falhas por máquina', 'Falhas e taxa no recorte selecionado')
+        grafico_maquinas(filtered, taxa_geral)
+
+    esquerda, direita = st.columns(2, gap='small')
+    with esquerda, st.container(border=True, key='comparison'):
+        painel_sensor(filtered, sensor, taxa_geral)
+    with direita, st.container(border=True, key='differences'):
+        grafico_diferencas(filtered, sensors)
+
+    linha_qualidade(filtered, sensors)
 
 
-# Mantém a proporção entre o dashboard principal e o painel lateral direito.
+# O dashboard ocupa a área principal e o assistente fica no painel da direita.
 # O chat é desenhado antes da leitura dos dados para continuar visível mesmo
-# quando não há CSV ou quando um filtro não encontra registros.
+# quando o banco está fora do ar ou um filtro não encontra registros.
 dashboard, assistant = st.columns([3.55, 1], gap='medium')
 with assistant:
     chat_panel()

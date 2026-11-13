@@ -1,6 +1,19 @@
-pandas
-sqlalchemy==2.0.36
-psycopg2-binary>=2.9.11
-python-dotenv==1.0.1
-matplotlib
-streamlit>=1.42.0
+# Dependências do projeto. Faixas testadas em Python 3.10 e 3.13; o limite
+# superior evita que uma versão nova com mudanças incompatíveis quebre o código.
+
+# dados, ETL e bancos
+pandas>=2.2,<4
+sqlalchemy>=2.0.36,<2.1
+psycopg2-binary>=2.9.10,<3
+python-dotenv>=1.0.1,<2
+matplotlib>=3.9,<4
+
+# dashboard
+streamlit>=1.60,<2
+plotly>=6,<8
+
+# agente RAG e banco vetorial
+openai>=1.60,<4
+chromadb>=1.5,<2
+huggingface_hub>=0.24,<3
+pypdf>=5,<7
