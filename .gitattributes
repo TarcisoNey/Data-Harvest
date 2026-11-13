@@ -1,0 +1,12 @@
+# Quebra de linha padronizada (LF) no repositório, em qualquer sistema.
+# Sem isso, quem usa Windows commita CRLF e rodar o pipeline em Mac/Linux
+# marca arquivos inteiros como alterados sem nenhuma mudança real.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.pdf binary
+*.db binary
+*.sqlite3 binary
+*.bin binary
+*.onnx binary

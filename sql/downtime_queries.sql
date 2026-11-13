@@ -1,24 +1,30 @@
-CREATE TABLE dim_maquina AS
+/* Uso: sqlite3 analise.db < sql/downtime_dump.sql  e depois este arquivo.
+   Estas consultas usam o modelo da Sprint 1 (tabela "bruto" + dim_maquina),
+   não o schema oficial de sql/schema_sqlite.sql. */
+
+CREATE TABLE IF NOT EXISTS dim_maquina AS
 SELECT DISTINCT machine_id, assembly_line_no
 FROM bruto;
 
 
-/* PERGUNTA: Quais são os 10 registros de maior tempo de parada (downtime) nas operações? */
+/* PERGUNTA: Quais são as 10 falhas mais recentes registradas nas operações?
+   (O conjunto não tem duração da parada: "downtime" só indica se houve falha.
+   Por isso a consulta ordena pela data, e não por um "tempo de parada".) */
 
-SELECT machine_id, assembly_line_no, downtime
+SELECT date, machine_id, assembly_line_no, downtime
 FROM bruto
-WHERE downtime != "No_Machine_Failure"
-ORDER BY downtime DESC
+WHERE downtime != 'No_Machine_Failure'
+ORDER BY date DESC
 LIMIT 10;
 
-/* INTERPRETAÇÃO: As 10 linhas com falhas efetivas e com maiores tempos de falhas respectivamente. */
+/* INTERPRETAÇÃO: As 10 falhas mais recentes, com a máquina e a linha de montagem de cada uma. */
 
 
 /* PERGUNTA: Quantas falhas ocorreram em cada linha de montagem? */
 
 SELECT assembly_line_no, COUNT(*) AS total_falhas 
 FROM bruto 
-WHERE downtime != "No_Machine_Failure"
+WHERE downtime != 'No_Machine_Failure'
 GROUP BY assembly_line_no;
 
 /* INTERPRETAÇÃO: Resume quantas falhas houve em cada setor sem precisar percorrer 2500 linhas de registros. */

@@ -42,3 +42,6 @@ Desktop.ini
 
 # Bancos SQLite gerados localmente
 *.db
+
+# Banco vetorial: gerado por python src/rag_ingest.py
+chroma_db/
