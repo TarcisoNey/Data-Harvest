@@ -40,7 +40,7 @@ Desktop.ini
 .turbo/
 .eslintcache
 
-# Bancos SQLite gerados localmente
+# Bancos locais antigos (o projeto usa só o PostgreSQL)
 *.db
 
 # Banco vetorial: gerado por python src/rag_ingest.py

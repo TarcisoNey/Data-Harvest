@@ -1,81 +1,86 @@
-[data-testid="stMainBlockContainer"] {
-    max-width: 1680px;
-    padding: 14px 24px 12px;
-}
+/* Dashboard Industrial — Data Harvest
+   Paleta pedida (verde e amarelo). Nos gráficos, amarelo = com falha e
+   sálvia = sem falha; o verde fica para a identidade e a interface. */
+
+[data-testid="stMainBlockContainer"] {max-width: 1680px; padding: 14px 24px 16px}
 [data-testid="stHeader"] {height: 0; background: transparent}
 [data-testid="stToolbar"] {display: none}
 [data-testid="stMainBlockContainer"] [data-testid="stVerticalBlock"] {gap: 8px}
+[data-testid="stMainBlockContainer"] :is([data-testid="stCaptionContainer"], [data-testid="stMarkdownContainer"]) {margin-bottom: 0}
+[data-testid="stCaptionContainer"] p {margin: 0; color: #58684F; font-size: 12px; line-height: 1.4}
 
-/* Streamlit usa margem negativa para alinhar Markdown com seu espaçamento padrão. */
-[data-testid="stMainBlockContainer"] :is([data-testid="stCaptionContainer"], [data-testid="stMarkdownContainer"]) {
-    margin-bottom: 0;
-}
-[data-testid="stCaptionContainer"] p {
-    margin: 0;
-    color: #58684F;
-    font-size: 11px;
-    line-height: 1.4;
-}
+/* Cabeçalho */
 .brand {color: #367C2B; font-size: 19px; font-weight: 700; line-height: 1.2}
 .dashboard-title {margin: 6px 0 0; padding: 0; color: #1F2D1C; font-size: 26px; line-height: 1.15}
-.section-heading h2 {margin: 0; padding: 0; color: #254D1E; font-size: 15px; line-height: 1.3}
-.section-heading p {margin: 4px 0 0; color: #58684F; font-size: 11px; line-height: 1.4}
-:is(.st-key-monthly, .st-key-machines, .st-key-comparison, .st-key-differences, .st-key-quality) {
-    background: white;
-    border-radius: 12px;
-}
-[data-testid="stMetric"] {background: white; border-radius: 12px; padding: 7px 12px; gap: 3px}
-[data-testid="stMetricLabel"] p {font-size: 10px; text-transform: uppercase; color: #58684F}
-[data-testid="stMetricValue"] {font-size: 25px; line-height: 1.2}
+.fonte {margin: 4px 0 0; color: #58684F; font-size: 12px}
 
+/* Filtros */
 .st-key-topbar {background: white; border: 1px solid #DCE5D4; border-radius: 12px; padding: 8px 10px}
-.st-key-filters [data-testid="stWidgetLabel"] {min-height: 0; margin: 0 0 3px}
-.st-key-filters [data-testid="stWidgetLabel"] p, .filter-label {
-    margin: 0;
-    color: #58684F;
-    font-size: 11px;
-    line-height: 1.4;
-    text-transform: uppercase;
-}
-.st-key-filters [data-testid="stColumn"] [data-testid="stVerticalBlock"] {gap: 3px}
-.st-key-filters :is([data-testid="stDateInput"], [data-testid="stSelectbox"]) :is(input, [data-baseweb="select"]) {
-    font-size: 13px;
-}
-.st-key-topbar [data-testid="stPopoverButton"] {padding: 4px 8px; min-height: 32px}
-.st-key-topbar [data-testid="stPopoverButton"] p {font-size: 12px; line-height: 1.25}
-.st-key-filters [data-testid="stPopoverButton"] {min-height: 40px; justify-content: space-between}
+.st-key-topbar [data-testid="stWidgetLabel"] {min-height: 0; margin: 0 0 3px}
+.st-key-topbar [data-testid="stWidgetLabel"] p, .filter-label {margin: 0; color: #58684F; font-size: 12px; line-height: 1.4}
+.st-key-topbar [data-testid="stColumn"] [data-testid="stVerticalBlock"] {gap: 3px}
+.st-key-topbar :is([data-testid="stDateInput"], [data-testid="stSelectbox"]) :is(input, [data-baseweb="select"]) {font-size: 13px}
+.st-key-topbar [data-testid="stPopoverButton"] {min-height: 40px; justify-content: space-between}
+.st-key-topbar [data-testid="stPopoverButton"] p {font-size: 13px}
 
+/* Cartões de totais */
+.kpis {display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px}
+.kpi {background: white; border-radius: 12px; padding: 9px 14px}
+.kpi p {margin: 0; color: #58684F; font-size: 12px; line-height: 1.3}
+.kpi strong {display: block; margin-top: 2px; color: #1F2D1C; font-size: 26px; font-weight: 600; line-height: 1.2;
+             font-variant-numeric: tabular-nums}
+
+/* Aviso de uma linha: onde as falhas se concentram */
+.sinal {
+    margin: 0; padding: 8px 12px; background: #FFFBDB; border-left: 4px solid #FFDD00;
+    border-radius: 6px; color: #3F3A12; font-size: 13px; line-height: 1.45;
+}
+.sinal strong {color: #1F2D1C}
+
+/* Painéis de gráfico */
+:is(.st-key-monthly, .st-key-machines, .st-key-comparison, .st-key-differences) {background: white; border-radius: 12px}
+.section-heading h2 {margin: 0; padding: 0; color: #254D1E; font-size: 15px; line-height: 1.3}
+.section-heading p {margin: 4px 0 0; color: #58684F; font-size: 12px; line-height: 1.4}
 [data-testid="stTabs"] button {min-height: 32px}
-[data-testid="stTabs"] button p {font-size: 11px}
-.st-key-quality [data-testid="stMetric"] {padding: 0}
-.st-key-quality [data-testid="stMetricLabel"] {min-height: 0}
-.st-key-quality [data-testid="stMetricLabel"] p {white-space: normal; line-height: 1.3}
-.st-key-quality [data-testid="stMetricValue"] {font-size: 14px}
+[data-testid="stTabs"] button p {font-size: 12px}
 
+.qualidade {margin: 0; color: #58684F; font-size: 12px}
+
+/* Assistente */
 .st-key-assistant {
-    background: white;
-    border: 1px solid #E5ECDD;
-    border-radius: 12px;
+    background: white; border: 1px solid #E5ECDD; border-radius: 12px;
     padding: 14px;
-    min-height: calc(100dvh - 28px);
+    position: sticky; top: 14px; max-height: calc(100dvh - 28px); overflow-y: auto;
 }
-.bubble {background: #EEF4E8; border-radius: 10px; padding: 12px; color: #31472A; font-size: 13px; line-height: 1.45}
-.bubble p {margin: 5px 0 0; font: inherit}
-.assistant-label {margin: 0; color: #58684F; font-size: 11px; line-height: 1.4; text-transform: uppercase}
-.suggestion {background: #F5F7F2; border-radius: 8px; padding: 8px 9px; color: #42583A; font-size: 12px; line-height: 1.4}
-.st-key-composer {padding-top: 10px; border-top: 1px solid #E5ECDD}
-.st-key-composer button:disabled {background: #FFF8CC; color: #776B36}
+.bubble {background: #EEF4E8; border-radius: 8px; padding: 12px; color: #31472A; font-size: 14px; line-height: 1.45}
+.bubble.aviso {background: #FFF9CC; border-left: 4px solid #FFDD00; color: #4A4415}
+.bubble strong {display: block; color: #1F2D1C}
+.bubble p {margin: 4px 0 0; font: inherit; overflow-wrap: anywhere}
+.assistant-label {margin: 4px 0 0; color: #5A6B52; font-size: 13px; font-weight: 500}
+.st-key-assistant [class*="st-key-sugestao_"] button {
+    justify-content: flex-start; background: #F5F7F2; border: 1px solid #E3E9DC; color: #31472A; text-align: left;
+}
+.st-key-assistant [class*="st-key-sugestao_"] button :is(div, p) {justify-content: flex-start; width: 100%; text-align: left}
+.st-key-assistant [class*="st-key-sugestao_"] button p {font-size: 14px; line-height: 1.4}
+.st-key-assistant [class*="st-key-sugestao_"] button:hover {background: #EEF4E8; border-color: #367C2B; color: #1F2D1C}
+.st-key-messages [data-testid="stChatMessage"] {padding: 6px 2px; gap: 8px}
+.st-key-messages [data-testid="stChatMessage"] p, .st-key-messages li {font-size: 14px; line-height: 1.5}
+.st-key-composer {padding-top: 10px; border-top: 1px solid #E3E9DC}
+.st-key-composer [data-testid="stForm"] {padding: 0}
+.st-key-messages [data-testid="stExpander"] summary p {font-size: 12px; color: #5A6B52}
+.st-key-messages [data-testid="stExpander"] :is(pre, code) {font-size: 11px}
+.st-key-messages [data-testid="stExpander"] li {font-size: 12px; line-height: 1.4}
 
+/* Telas médias: o assistente desce para baixo do painel */
 @media (max-width: 1050px) {
     [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"] .st-key-assistant) {flex-wrap: wrap}
     [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"] .st-key-assistant) > [data-testid="stColumn"] {flex: 1 1 100%}
-    .st-key-assistant {min-height: 0}
+    .st-key-assistant {position: static; max-height: none}
 }
+/* Celular */
 @media (max-width: 700px) {
     [data-testid="stMainBlockContainer"] {padding-inline: 12px}
-    .st-key-filters [data-testid="stHorizontalBlock"] {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-    .st-key-filters [data-testid="stColumn"] {width: 100%; min-width: 0}
+    .st-key-topbar [data-testid="stHorizontalBlock"] {display: grid; grid-template-columns: minmax(0, 1fr)}
+    .st-key-topbar [data-testid="stColumn"] {width: 100%; min-width: 0}
+    .kpis {grid-template-columns: repeat(2, minmax(0, 1fr))}
 }

@@ -1,0 +1,5 @@
+# Dependências só do ETL (usadas pela imagem Docker do serviço "etl")
+pandas>=2.2,<4
+sqlalchemy>=2.0.36,<2.1
+psycopg2-binary>=2.9.10,<3
+python-dotenv>=1.0.1,<2

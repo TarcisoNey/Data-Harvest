@@ -1,0 +1,3 @@
+# Para desenvolver e rodar os testes: pip install -r requirements-dev.txt
+-r requirements.txt
+pytest>=8,<10
